@@ -1,4 +1,7 @@
 .DS_Store
+dist/
+node_modules/
+vite-dev*.log
 screenshots/
 scripts/__pycache__/
 *.pyc
