@@ -22,33 +22,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
       - name: Install deploy tools
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y rsync
 
-      - name: Validate static assets
+      - name: Validate build output
         run: |
           set -euo pipefail
-          test -s index.html
-          test -s styles.css
-          test -s script.js
-          test -s manifest.json
-          test -s service-worker.js
-          test "$(find assets/frames -maxdepth 1 -name 'ice-*.webp' | wc -l | tr -d ' ')" = "256"
-          test -s assets/icons/icon-192.png
-          test -s assets/icons/icon-512.png
-          test -s assets/icons/maskable-512.png
-
-      - name: Build deploy bundle
-        run: |
-          set -euo pipefail
-          rm -rf dist
-          mkdir -p dist/assets
-          cp index.html styles.css script.js manifest.json service-worker.js dist/
-          cp -R assets/frames dist/assets/
-          cp -R assets/icons dist/assets/
+          test -s dist/index.html
+          test -s dist/manifest.json
+          test -s dist/service-worker.js
+          test "$(find dist/assets/frames -maxdepth 1 -name 'ice-*.webp' | wc -l | tr -d ' ')" = "256"
+          test -s dist/assets/icons/icon-192.png
+          test -s dist/assets/icons/icon-512.png
+          test -s dist/assets/icons/maskable-512.png
 
       - name: Configure SSH
         run: |
@@ -70,5 +71,5 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location https://meltingice.co.kr/ > /tmp/melting-ice.html
-          grep -q '이 얼음이 다 녹기전에' /tmp/melting-ice.html
+          grep -q '얼음 녹이기' /tmp/melting-ice.html
           curl --fail --silent --show-error --head https://meltingice.co.kr/assets/frames/ice-000.webp

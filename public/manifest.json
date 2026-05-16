@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "이 얼음이 다 녹기전에",
-  "short_name": "녹기전에",
+  "name": "얼음 녹이기",
+  "short_name": "얼음 녹이기",
   "description": "시간을 정하면 얼음이 천천히 녹는 가벼운 공부 타이머.",
   "lang": "ko-KR",
   "start_url": "/?source=pwa",

@@ -1,18 +1,19 @@
-# 이 얼음이 다 녹기전에
+# 얼음 녹이기
 
 시간을 정하면 얼음이 천천히 녹는 가벼운 공부 타이머입니다.
 
 ## Local Preview
 
 ```bash
-python3 -m http.server 4173
+npm install
+npm run dev
 ```
 
-Then open `http://127.0.0.1:4173`.
+Then open the local URL printed by Vite.
 
 ## Deploy
 
-Pushes to `main` run GitHub Actions and deploy the static runtime files to the server with `rsync`.
+Pushes to `main` run GitHub Actions, build the Vite app, and deploy the static `dist` bundle to the server with `rsync`.
 
 Required repository secrets:
 
@@ -21,4 +22,4 @@ Required repository secrets:
 - `RUMICLEAN_SSH_KEY`
 - `RUMICLEAN_SSH_PORT`
 
-The workflow deploys only the runtime files: `index.html`, `styles.css`, `script.js`, `manifest.json`, `service-worker.js`, `assets/frames`, and `assets/icons`.
+The workflow deploys only the generated runtime bundle and the static assets copied by Vite.
