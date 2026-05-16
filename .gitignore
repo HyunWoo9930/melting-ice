@@ -1,0 +1,13 @@
+.DS_Store
+screenshots/
+scripts/__pycache__/
+*.pyc
+
+# Source experiments kept locally, not needed for the deployed static site.
+assets/ice-*.png
+assets/melt-sprite-sheet.png
+
+# Local secrets or throwaway deploy keys must never be committed.
+.env
+.env.*
+.secrets/

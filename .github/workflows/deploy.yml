@@ -1,0 +1,74 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: melting-ice-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_PATH: /home/ec2-user/ice.rumiclean.com/site
+      RUMICLEAN_SSH_HOST: ${{ secrets.RUMICLEAN_SSH_HOST }}
+      RUMICLEAN_SSH_USER: ${{ secrets.RUMICLEAN_SSH_USER }}
+      RUMICLEAN_SSH_PORT: ${{ secrets.RUMICLEAN_SSH_PORT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deploy tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y rsync
+
+      - name: Validate static assets
+        run: |
+          set -euo pipefail
+          test -s index.html
+          test -s styles.css
+          test -s script.js
+          test -s manifest.json
+          test -s service-worker.js
+          test "$(find assets/frames -maxdepth 1 -name 'ice-*.webp' | wc -l | tr -d ' ')" = "256"
+          test -s assets/icons/icon-192.png
+          test -s assets/icons/icon-512.png
+          test -s assets/icons/maskable-512.png
+
+      - name: Build deploy bundle
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/assets
+          cp index.html styles.css script.js manifest.json service-worker.js dist/
+          cp -R assets/frames dist/assets/
+          cp -R assets/icons dist/assets/
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.RUMICLEAN_SSH_KEY }}" > ~/.ssh/rumiclean_deploy_key
+          chmod 600 ~/.ssh/rumiclean_deploy_key
+          ssh-keyscan -p "$RUMICLEAN_SSH_PORT" -H "$RUMICLEAN_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy to rumiclean
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/rumiclean_deploy_key -p $RUMICLEAN_SSH_PORT" \
+            dist/ "$RUMICLEAN_SSH_USER@$RUMICLEAN_SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Verify production
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://meltingice.co.kr/ > /tmp/melting-ice.html
+          grep -q '이 얼음이 다 녹기전에' /tmp/melting-ice.html
+          curl --fail --silent --show-error --head https://meltingice.co.kr/assets/frames/ice-000.webp
