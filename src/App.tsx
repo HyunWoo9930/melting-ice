@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 const assetVersion = "20260516-canvas-1";
 const meltFrameCount = 256;
@@ -11,7 +18,7 @@ const refreezeSpeed = 1.15;
 const freezerHoldMs = 10 * 60 * 1000;
 const freezerWarningMs = 5 * 1000;
 const defaultMinutes = 25;
-const defaultTitle = "얼음 녹이기";
+const defaultTitle = "이 얼음이 녹기 전에";
 const doneTitle = `수고했어요 · ${defaultTitle}`;
 
 const modes = {
@@ -31,8 +38,10 @@ const meltFrames = Array.from(
 );
 const baseIceFrame = meltFrames[0];
 
-const meltFrameImages: Array<HTMLImageElement | undefined> = Array(meltFrameCount);
-const meltFramePromises: Array<Promise<HTMLImageElement | null> | undefined> = Array(meltFrameCount);
+const meltFrameImages: Array<HTMLImageElement | undefined> =
+  Array(meltFrameCount);
+const meltFramePromises: Array<Promise<HTMLImageElement | null> | undefined> =
+  Array(meltFrameCount);
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -79,7 +88,11 @@ function nearestLoadedFrame(index: number) {
   return -1;
 }
 
-function freezerPhase(mode: TimerMode, modeStartedAt: number, now = Date.now()): FreezerPhase {
+function freezerPhase(
+  mode: TimerMode,
+  modeStartedAt: number,
+  now = Date.now(),
+): FreezerPhase {
   if (mode !== modes.freezer) return "off";
   const elapsedMs = now - modeStartedAt;
   if (elapsedMs >= freezerHoldMs) return "refreezing";
@@ -109,7 +122,8 @@ export default function App() {
   const progress = totalMs <= 0 ? 0 : clamp(1 - remainingMs / totalMs, 0, 1);
   const visualMelt = visualProgress(progress);
   const currentFreezerPhase = freezerPhase(activeMode, modeStartedAt);
-  const timerState: TimerState = remainingMs === 0 ? "done" : isRunning ? "running" : "idle";
+  const timerState: TimerState =
+    remainingMs === 0 ? "done" : isRunning ? "running" : "idle";
   const isDone = timerState === "done";
 
   const startPauseText = useMemo(() => {
@@ -142,7 +156,15 @@ export default function App() {
     context.globalAlpha = waterOpacity;
     context.fillStyle = "#8DCFF4";
     context.beginPath();
-    context.ellipse(size / 2, size * 0.78, puddleWidth / 2, puddleHeight / 2, 0, 0, Math.PI * 2);
+    context.ellipse(
+      size / 2,
+      size * 0.78,
+      puddleWidth / 2,
+      puddleHeight / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
     context.fill();
     context.restore();
 
@@ -184,7 +206,15 @@ export default function App() {
   }, []);
 
   const requestMeltFrameWindow = useCallback((index: number) => {
-    [index, index + 1, index + 2, index + 3, index + 6, index - 1, index - 2].forEach((nearbyIndex) => {
+    [
+      index,
+      index + 1,
+      index + 2,
+      index + 3,
+      index + 6,
+      index - 1,
+      index - 2,
+    ].forEach((nearbyIndex) => {
       void loadMeltFrame(nearbyIndex);
     });
   }, []);
@@ -202,13 +232,23 @@ export default function App() {
   );
 
   const syncView = useCallback(() => {
-    const nextRemainingMs = clamp(remainingMsRef.current, 0, durationSecondsRef.current * 1000);
+    const nextRemainingMs = clamp(
+      remainingMsRef.current,
+      0,
+      durationSecondsRef.current * 1000,
+    );
     remainingMsRef.current = nextRemainingMs;
     setRemainingMs(nextRemainingMs);
     setIsRunning(isRunningRef.current);
     setActiveMode(modeRef.current);
     setModeStartedAt(modeStartedAtRef.current);
-    updateMeltFrame(visualProgress(durationSecondsRef.current <= 0 ? 0 : 1 - nextRemainingMs / (durationSecondsRef.current * 1000)));
+    updateMeltFrame(
+      visualProgress(
+        durationSecondsRef.current <= 0
+          ? 0
+          : 1 - nextRemainingMs / (durationSecondsRef.current * 1000),
+      ),
+    );
   }, [updateMeltFrame]);
 
   const stopLoop = useCallback(() => {
@@ -232,11 +272,20 @@ export default function App() {
     }
 
     if (modeRef.current === modes.freezer) {
-      const previousRefreezeMs = Math.max(0, previousTickTime - modeStartedAtRef.current - freezerHoldMs);
-      const currentRefreezeMs = Math.max(0, now - modeStartedAtRef.current - freezerHoldMs);
+      const previousRefreezeMs = Math.max(
+        0,
+        previousTickTime - modeStartedAtRef.current - freezerHoldMs,
+      );
+      const currentRefreezeMs = Math.max(
+        0,
+        now - modeStartedAtRef.current - freezerHoldMs,
+      );
       const refreezeMs = currentRefreezeMs - previousRefreezeMs;
       remainingMsRef.current += refreezeMs * refreezeSpeed;
-      remainingMsRef.current = Math.min(remainingMsRef.current, durationSecondsRef.current * 1000);
+      remainingMsRef.current = Math.min(
+        remainingMsRef.current,
+        durationSecondsRef.current * 1000,
+      );
       return;
     }
 
@@ -245,7 +294,11 @@ export default function App() {
 
   const tick = useCallback(() => {
     applyElapsed(Date.now());
-    remainingMsRef.current = clamp(remainingMsRef.current, 0, durationSecondsRef.current * 1000);
+    remainingMsRef.current = clamp(
+      remainingMsRef.current,
+      0,
+      durationSecondsRef.current * 1000,
+    );
     syncView();
 
     if (remainingMsRef.current <= 0) {
@@ -317,20 +370,24 @@ export default function App() {
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!isRunningRef.current || document.visibilityState !== "visible") return;
+      if (!isRunningRef.current || document.visibilityState !== "visible")
+        return;
       stopLoop();
       tick();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [stopLoop, tick]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !import.meta.env.PROD) return;
 
     const registerServiceWorker = () => {
-      void navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+      void navigator.serviceWorker
+        .register("/service-worker.js")
+        .catch(() => {});
     };
 
     if (document.readyState === "loading") {
@@ -349,11 +406,14 @@ export default function App() {
       data-state={timerState}
       data-mode={activeMode}
       data-freezer-phase={currentFreezerPhase}
-      style={{ "--melt": visualMelt.toFixed(4) } as CSSProperties & Record<"--melt", string>}
+      style={
+        { "--melt": visualMelt.toFixed(4) } as CSSProperties &
+          Record<"--melt", string>
+      }
     >
       <header className="topbar" aria-label="서비스 헤더">
-        <a className="brand" href="./" aria-label="얼음 녹이기 홈">
-          얼음 녹이기
+        <a className="brand" href="./" aria-label="이 얼음이 녹기 전에 홈">
+          이 얼음이 녹기 전에
         </a>
         <button
           className="icon-button"
@@ -377,7 +437,9 @@ export default function App() {
             <button
               className={`mode-action mode-action-heater${activeMode === modes.heater ? " active" : ""}`}
               type="button"
-              aria-label={activeMode === modes.heater ? "히터 끄기" : "히터 켜기"}
+              aria-label={
+                activeMode === modes.heater ? "히터 끄기" : "히터 켜기"
+              }
               aria-pressed={activeMode === modes.heater}
               onClick={() => toggleMode(modes.heater)}
             >
@@ -388,7 +450,9 @@ export default function App() {
             <button
               className={`mode-action mode-action-freezer${activeMode === modes.freezer ? " active" : ""}`}
               type="button"
-              aria-label={activeMode === modes.freezer ? "냉장고 끄기" : "냉장고 켜기"}
+              aria-label={
+                activeMode === modes.freezer ? "냉장고 끄기" : "냉장고 켜기"
+              }
               aria-pressed={activeMode === modes.freezer}
               onClick={() => toggleMode(modes.freezer)}
             >
@@ -403,7 +467,12 @@ export default function App() {
               </svg>
             </button>
           </div>
-          <p className="freezer-warning" role="status" aria-live="assertive" data-visible={currentFreezerPhase === "warning"}>
+          <p
+            className="freezer-warning"
+            role="status"
+            aria-live="assertive"
+            data-visible={currentFreezerPhase === "warning"}
+          >
             위험! 곧 얼음이 다시 얼어요.
           </p>
         </div>
@@ -419,7 +488,12 @@ export default function App() {
           onAnimationEnd={() => setIsRippling(false)}
         >
           <span className="melt-scene" aria-hidden="true">
-            <canvas ref={canvasRef} className="melt-frame" width={frameCanvasSize} height={frameCanvasSize} />
+            <canvas
+              ref={canvasRef}
+              className="melt-frame"
+              width={frameCanvasSize}
+              height={frameCanvasSize}
+            />
           </span>
         </button>
 
@@ -432,7 +506,9 @@ export default function App() {
               max={180}
               value={durationMinutes}
               aria-label="공부 시간(분)"
-              onChange={(event) => setDuration(event.currentTarget.valueAsNumber)}
+              onChange={(event) =>
+                setDuration(event.currentTarget.valueAsNumber)
+              }
             />
             <span>분</span>
           </label>
@@ -453,14 +529,24 @@ export default function App() {
           >
             {startPauseText}
           </button>
-          <button className="secondary-action icon-action" type="button" aria-label="다시 시작" onClick={reset}>
+          <button
+            className="secondary-action icon-action"
+            type="button"
+            aria-label="다시 시작"
+            onClick={reset}
+          >
             <svg aria-hidden="true" viewBox="0 0 24 24">
               <path d="M3 12a9 9 0 1 0 3-6.7" />
               <path d="M3 4v5h5" />
             </svg>
           </button>
         </div>
-        <p className="completion-status" role="status" aria-live="polite" data-visible={isDone}>
+        <p
+          className="completion-status"
+          role="status"
+          aria-live="polite"
+          data-visible={isDone}
+        >
           {isDone ? "수고했어요." : ""}
         </p>
       </section>
