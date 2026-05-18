@@ -7,13 +7,9 @@ import {
   type CSSProperties,
 } from "react";
 
-const assetVersion = "20260518-react-2";
+const assetVersion = "20260518-video-1";
 const meltFrameCount = 256;
-const meltFrameDigits = 3;
-const meltFrameExtension = "webp";
-const frameCanvasSize = 720;
-const forwardPreloadCount = 18;
-const backwardPreloadCount = 4;
+const videoFrameRate = 30;
 const heaterSpeed = 1.3;
 const refreezeSpeed = 1.15;
 const freezerHoldMs = 10 * 60 * 1000;
@@ -32,15 +28,8 @@ type TimerMode = (typeof modes)[keyof typeof modes];
 type FreezerPhase = "off" | "holding" | "warning" | "refreezing";
 type TimerState = "idle" | "running" | "done";
 
-const meltFrames = Array.from(
-  { length: meltFrameCount },
-  (_, index) =>
-    `/assets/frames/ice-${String(index).padStart(meltFrameDigits, "0")}.${meltFrameExtension}?v=${assetVersion}`,
-);
-const meltFrameImages: Array<HTMLImageElement | undefined> =
-  Array(meltFrameCount);
-const meltFramePromises: Array<Promise<HTMLImageElement | null> | undefined> =
-  Array(meltFrameCount);
+const meltVideoSource = `/assets/ice-melt.webm?v=${assetVersion}`;
+const meltPosterSource = `/assets/frames/ice-000.webp?v=${assetVersion}`;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -48,41 +37,6 @@ function clamp(value: number, min: number, max: number) {
 
 function visualProgress(melt: number) {
   return melt * melt * (3 - 2 * melt);
-}
-
-function loadMeltFrame(index: number) {
-  if (index < 0 || index >= meltFrames.length) return Promise.resolve(null);
-  if (meltFramePromises[index]) return meltFramePromises[index]!;
-
-  const image = new Image();
-  image.decoding = "async";
-
-  meltFramePromises[index] = new Promise((resolve) => {
-    image.onload = () => {
-      meltFrameImages[index] = image;
-      resolve(image);
-    };
-    image.onerror = () => resolve(null);
-    image.src = meltFrames[index];
-  });
-
-  return meltFramePromises[index]!;
-}
-
-function loadBaseIceFrame() {
-  return loadMeltFrame(0);
-}
-
-function getFrameBlend(melt: number) {
-  const framePosition = clamp(melt, 0, 1) * (meltFrameCount - 1);
-  const currentFrame = Math.floor(framePosition);
-  const nextFrame = Math.min(currentFrame + 1, meltFrameCount - 1);
-
-  return {
-    currentFrame,
-    nextFrame,
-    mix: framePosition - currentFrame,
-  };
 }
 
 function freezerPhase(
@@ -98,7 +52,7 @@ function freezerPhase(
 }
 
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const meltVideoRef = useRef<HTMLVideoElement | null>(null);
   const frameIdRef = useRef(0);
   const lastTickTimeRef = useRef(0);
   const durationSecondsRef = useRef(defaultMinutes * 60);
@@ -106,8 +60,8 @@ export default function App() {
   const modeStartedAtRef = useRef(0);
   const modeRef = useRef<TimerMode>(modes.normal);
   const isRunningRef = useRef(false);
-  const latestMeltRef = useRef(0);
-  const lastDrawnFrameRef = useRef(0);
+  const pendingVideoMeltRef = useRef(0);
+  const lastSyncedVideoFrameRef = useRef(-1);
 
   const [durationMinutes, setDurationMinutes] = useState(defaultMinutes);
   const [remainingMs, setRemainingMs] = useState(remainingMsRef.current);
@@ -130,71 +84,30 @@ export default function App() {
     return remainingMs === totalMs ? "시작" : "계속";
   }, [isDone, isRunning, remainingMs, totalMs]);
 
-  const drawMeltFrame = useCallback((melt: number) => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!context) return false;
-
+  const syncMeltVideo = useCallback((melt: number, force = false) => {
+    const video = meltVideoRef.current;
     const nextMelt = clamp(melt, 0, 1);
-    const { currentFrame, nextFrame, mix } = getFrameBlend(nextMelt);
-    const currentImage = meltFrameImages[currentFrame];
-    const nextImage = meltFrameImages[nextFrame];
-    if (!currentImage) return false;
+    pendingVideoMeltRef.current = nextMelt;
+    if (!video) return;
 
-    const size = frameCanvasSize;
-    context.clearRect(0, 0, size, size);
-    context.drawImage(currentImage, 0, 0, size, size);
+    const targetFrame = Math.round(nextMelt * (meltFrameCount - 1));
+    if (!force && targetFrame === lastSyncedVideoFrameRef.current) return;
+    if (video.readyState === 0 && targetFrame > 0) return;
 
-    if (currentImage && nextImage && nextFrame !== currentFrame && mix > 0) {
-      context.save();
-      context.globalAlpha = mix;
-      context.drawImage(nextImage, 0, 0, size, size);
-      context.restore();
+    const measuredDuration =
+      Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : meltFrameCount / videoFrameRate;
+    const maxSeekTime = Math.max(0, measuredDuration - 1 / videoFrameRate);
+    const targetTime = (targetFrame / (meltFrameCount - 1)) * maxSeekTime;
+
+    if (Math.abs(video.currentTime - targetTime) > 0.004) {
+      video.currentTime = targetTime;
     }
 
-    lastDrawnFrameRef.current = currentFrame;
-    return true;
+    video.pause();
+    lastSyncedVideoFrameRef.current = targetFrame;
   }, []);
-
-  const requestMeltFrameWindow = useCallback((index: number) => {
-    const direction = index >= lastDrawnFrameRef.current ? 1 : -1;
-    const nearbyIndexes = new Set([index, index + 1, index - 1]);
-
-    for (let offset = 1; offset <= forwardPreloadCount; offset += 1) {
-      nearbyIndexes.add(index + offset * direction);
-    }
-
-    for (let offset = 1; offset <= backwardPreloadCount; offset += 1) {
-      nearbyIndexes.add(index - offset * direction);
-    }
-
-    nearbyIndexes.forEach((nearbyIndex) => void loadMeltFrame(nearbyIndex));
-  }, []);
-
-  const updateMeltFrame = useCallback(
-    (melt: number) => {
-      const nextMelt = clamp(melt, 0, 1);
-      const { currentFrame, nextFrame } = getFrameBlend(nextMelt);
-      latestMeltRef.current = nextMelt;
-      requestMeltFrameWindow(currentFrame);
-
-      if (meltFrameImages[currentFrame] && meltFrameImages[nextFrame]) {
-        drawMeltFrame(nextMelt);
-        return;
-      }
-
-      if (drawMeltFrame(nextMelt)) return;
-      void Promise.all([
-        loadMeltFrame(currentFrame),
-        loadMeltFrame(nextFrame),
-      ]).then(() => {
-        if (Math.abs(latestMeltRef.current - nextMelt) < 0.0005) {
-          drawMeltFrame(nextMelt);
-        }
-      });
-    },
-    [drawMeltFrame, requestMeltFrameWindow],
-  );
 
   const syncView = useCallback(() => {
     const nextRemainingMs = clamp(
@@ -207,14 +120,14 @@ export default function App() {
     setIsRunning(isRunningRef.current);
     setActiveMode(modeRef.current);
     setModeStartedAt(modeStartedAtRef.current);
-    updateMeltFrame(
+    syncMeltVideo(
       visualProgress(
         durationSecondsRef.current <= 0
           ? 0
           : 1 - nextRemainingMs / (durationSecondsRef.current * 1000),
       ),
     );
-  }, [updateMeltFrame]);
+  }, [syncMeltVideo]);
 
   const stopLoop = useCallback(() => {
     if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
@@ -330,8 +243,8 @@ export default function App() {
   }, [isDone]);
 
   useEffect(() => {
-    void loadBaseIceFrame().then(() => drawMeltFrame(0));
-  }, [drawMeltFrame]);
+    syncMeltVideo(0, true);
+  }, [syncMeltVideo]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -469,11 +382,21 @@ export default function App() {
           onAnimationEnd={() => setIsRippling(false)}
         >
           <span className="melt-scene" aria-hidden="true">
-            <canvas
-              ref={canvasRef}
-              className="melt-frame"
-              width={frameCanvasSize}
-              height={frameCanvasSize}
+            <video
+              ref={meltVideoRef}
+              className="melt-video"
+              src={meltVideoSource}
+              poster={meltPosterSource}
+              preload="auto"
+              muted
+              playsInline
+              disablePictureInPicture
+              onLoadedMetadata={() =>
+                syncMeltVideo(pendingVideoMeltRef.current, true)
+              }
+              onCanPlay={() =>
+                syncMeltVideo(pendingVideoMeltRef.current, true)
+              }
             />
           </span>
         </button>

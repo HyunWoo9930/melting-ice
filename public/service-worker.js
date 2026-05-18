@@ -1,5 +1,5 @@
-const cacheVersion = "20260518-react-2";
-const assetVersion = "20260518-react-2";
+const cacheVersion = "20260518-video-1";
+const assetVersion = "20260518-video-1";
 const appCacheName = `melting-ice-app-${cacheVersion}`;
 const frameCacheName = `melting-ice-frames-${cacheVersion}`;
 
@@ -12,8 +12,8 @@ const appShell = [
   "/assets/icons/icon-192.png",
   "/assets/icons/icon-512.png",
   "/assets/icons/maskable-512.png",
+  `/assets/ice-melt.webm?v=${assetVersion}`,
   `/assets/frames/ice-000.webp?v=${assetVersion}`,
-  `/assets/frames/ice-001.webp?v=${assetVersion}`,
 ];
 
 self.addEventListener("install", (event) => {

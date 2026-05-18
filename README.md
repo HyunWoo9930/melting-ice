@@ -15,6 +15,7 @@ Then open the local URL printed by Vite.
 
 ```bash
 npm test
+npm run build:video
 npm run build
 ```
 

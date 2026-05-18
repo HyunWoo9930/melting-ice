@@ -69,11 +69,11 @@ Make a light, almost empty-feeling web site where a user sets a study time and w
 
 - Before start, the cube is full-size and glossy.
 - During focus, progress drives melting:
-  - a 256-frame transparent WebP image sequence advances by timer progress;
-  - adjacent frames crossfade by sub-frame progress instead of hard-swapping;
-  - the sequence is rebuilt from four solid-looking photographic keyframes;
+  - a transparent VP9 WebM video generated from the 256 WebP frames is seeked by timer progress;
+  - the app updates the video position by target frame instead of loading individual images during focus;
+  - the video is rebuilt from four solid-looking photographic keyframes via the generated WebP sequence;
   - the cube lowers and compresses from the original camera angle;
-  - the pale sky-blue puddle grows gradually behind the PNG frames;
+  - the pale sky-blue puddle grows gradually behind the transparent video;
   - completion leaves only the final puddle frame.
 - Pausing freezes the timer and the visual state.
 - Reset restores the selected duration and full cube.
@@ -95,7 +95,7 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 - Single full-height screen with a centered vertical composition.
 - The ice object occupies the visual center.
 - Controls sit low, compact, and thumb-friendly.
-- The WebP frame canvas is transparent around the ice, so temperature background colors do not tint the ice or reveal a square boundary.
+- The transparent melt video keeps the ice separate from the temperature background, so heater/freezer colors do not tint the ice or reveal a square boundary.
 - On desktop, the layout remains narrow and object-focused instead of spreading into columns.
 
 ### Color
@@ -118,13 +118,15 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 ### Files
 
 - `index.html`: Vite app shell and install metadata.
-- `src/App.tsx`: timer state, duration controls, fullscreen, temperature modes, canvas frame player, and service-worker registration.
-- `src/App.test.tsx`: interaction and melt-frame regression coverage.
+- `src/App.tsx`: timer state, duration controls, fullscreen, temperature modes, video frame seeking, and service-worker registration.
+- `src/App.test.tsx`: interaction and melt-video regression coverage.
 - `src/frameGenerator.test.ts`: path regression coverage for frame generation.
 - `styles.css`: all visual design and animation.
 - `scripts/build_melt_frames.py`: generates the 256-frame transparent WebP melt sequence from the source keyframes while filling the ice interior in the alpha mask.
+- `scripts/build_melt_video.sh`: turns the generated WebP sequence into the transparent `public/assets/ice-melt.webm` playback asset.
 - `public/assets/keyframes/ice-key-00.png` to `public/assets/keyframes/ice-key-100.png`: solid-looking source melt states.
-- `public/assets/frames/ice-000.webp` to `public/assets/frames/ice-255.webp`: generated melt sequence used by the frame player.
+- `public/assets/frames/ice-000.webp` to `public/assets/frames/ice-255.webp`: generated source sequence used to build the melt video.
+- `public/assets/ice-melt.webm`: transparent VP9 melt video used by the app.
 - `public/service-worker.js`: app-shell and frame caching for production.
 - `design.md`: this design reference.
 
@@ -137,8 +139,8 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 - `lastTickTime`
 - `activeMode`
 - `modeStartedAt`
-- `currentMeltFrame`
-- `currentNextMeltFrame`
+- `pendingVideoMelt`
+- `lastSyncedVideoFrame`
 
 ### Accessibility
 

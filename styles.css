@@ -229,7 +229,7 @@ button {
   transform-origin: center;
 }
 
-.melt-frame {
+.melt-video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -237,6 +237,7 @@ button {
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .ice-stage.ripple::after {

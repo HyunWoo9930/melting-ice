@@ -46,6 +46,7 @@ jobs:
           test -s dist/index.html
           test -s dist/manifest.json
           test -s dist/service-worker.js
+          test -s dist/assets/ice-melt.webm
           test "$(find dist/assets/frames -maxdepth 1 -name 'ice-*.webp' | wc -l | tr -d ' ')" = "256"
           test -s dist/assets/icons/icon-192.png
           test -s dist/assets/icons/icon-512.png
@@ -72,4 +73,5 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --location https://meltingice.co.kr/ > /tmp/melting-ice.html
           grep -q '이 얼음이 녹기 전에' /tmp/melting-ice.html
+          curl --fail --silent --show-error --head https://meltingice.co.kr/assets/ice-melt.webm
           curl --fail --silent --show-error --head https://meltingice.co.kr/assets/frames/ice-000.webp
