@@ -1,4 +1,4 @@
-# 얼음 녹이기
+# 이 얼음이 녹기 전에
 
 시간을 정하면 얼음이 천천히 녹는 가벼운 공부 타이머입니다.
 
@@ -10,6 +10,13 @@ npm run dev
 ```
 
 Then open the local URL printed by Vite.
+
+## Checks
+
+```bash
+npm test
+npm run build
+```
 
 ## Deploy
 

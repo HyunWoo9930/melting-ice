@@ -44,7 +44,7 @@ Make a light, almost empty-feeling web site where a user sets a study time and w
 
 ### First View
 
-- Small top label: `이 얼음이 다 녹기전에`
+- Small top label: `이 얼음이 녹기 전에`
 - A single central ice cube scene.
 - A single custom minute input.
 - Main control: start / pause / resume.
@@ -54,11 +54,13 @@ Make a light, almost empty-feeling web site where a user sets a study time and w
 
 ### Focus View
 
-- After the user presses start, the header, duration controls, and buttons disappear.
+- After the user presses start, the header, duration controls, and bottom buttons disappear.
 - The page becomes a quiet full-screen ice scene.
-- Only the melting ice remains visible while the session is running.
+- The melting ice remains central while compact top controls stay reachable.
 - The user reads progress from the ice, not from numbers or bars.
 - Two small icon controls sit at the top while running:
+  - Pause freezes the timer and keeps the current melt frame.
+  - Reset restores the selected duration and full cube.
   - Heater changes only the page background to a muted warm red and melts 1.3x faster.
   - Freezer changes only the page background to a stronger cold blue, pauses melting for 10 minutes, then refreezes the ice at 1.15x if left on.
   - During the final 5 seconds before refreezing starts, a small warning appears: `위험! 곧 얼음이 다시 얼어요!`
@@ -115,13 +117,15 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 
 ### Files
 
-- `index.html`: semantic page structure.
+- `index.html`: Vite app shell and install metadata.
+- `src/App.tsx`: timer state, duration controls, fullscreen, temperature modes, canvas frame player, and service-worker registration.
+- `src/App.test.tsx`: interaction and melt-frame regression coverage.
+- `src/frameGenerator.test.ts`: path regression coverage for frame generation.
 - `styles.css`: all visual design and animation.
-- `script.js`: timer state, duration controls, fullscreen, and image-sequence visual progress.
 - `scripts/build_melt_frames.py`: generates the 256-frame transparent WebP melt sequence from the source keyframes while filling the ice interior in the alpha mask.
-- `assets/keyframes/ice-key-00.png` to `assets/keyframes/ice-key-100.png`: solid-looking source melt states.
-- `assets/frames/ice-000.webp` to `assets/frames/ice-255.webp`: generated melt sequence used by the frame player.
-- `assets/ice-00.png` to `assets/ice-100.png`: source/reference melt states.
+- `public/assets/keyframes/ice-key-00.png` to `public/assets/keyframes/ice-key-100.png`: solid-looking source melt states.
+- `public/assets/frames/ice-000.webp` to `public/assets/frames/ice-255.webp`: generated melt sequence used by the frame player.
+- `public/service-worker.js`: app-shell and frame caching for production.
 - `design.md`: this design reference.
 
 ### State
@@ -153,7 +157,8 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 
 ## Done Check
 
-- Opening `index.html` shows the usable time-setting screen immediately.
+- `npm run dev` shows the usable time-setting screen immediately.
+- `npm test` and `npm run build` pass.
 - The timer can start, pause, resume, and reset.
 - Changing duration updates the display and melt state.
 - The ice visibly melts as time passes.

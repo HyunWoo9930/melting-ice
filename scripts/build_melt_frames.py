@@ -11,12 +11,13 @@ from PIL import Image, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "assets" / "frames"
+ASSET_DIR = ROOT / "public" / "assets"
+OUT_DIR = ASSET_DIR / "frames"
 KEYFRAMES = [
-    ROOT / "assets" / "keyframes" / "ice-key-00.png",
-    ROOT / "assets" / "keyframes" / "ice-key-35.png",
-    ROOT / "assets" / "keyframes" / "ice-key-70.png",
-    ROOT / "assets" / "keyframes" / "ice-key-100.png",
+    ASSET_DIR / "keyframes" / "ice-key-00.png",
+    ASSET_DIR / "keyframes" / "ice-key-35.png",
+    ASSET_DIR / "keyframes" / "ice-key-70.png",
+    ASSET_DIR / "keyframes" / "ice-key-100.png",
 ]
 OUTPUT_SIZE = 720
 FRAME_COUNT = 256

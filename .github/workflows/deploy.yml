@@ -71,5 +71,5 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location https://meltingice.co.kr/ > /tmp/melting-ice.html
-          grep -q '얼음 녹이기' /tmp/melting-ice.html
+          grep -q '이 얼음이 녹기 전에' /tmp/melting-ice.html
           curl --fail --silent --show-error --head https://meltingice.co.kr/assets/frames/ice-000.webp

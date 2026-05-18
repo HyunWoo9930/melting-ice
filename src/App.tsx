@@ -7,12 +7,11 @@ import {
   type CSSProperties,
 } from "react";
 
-const assetVersion = "20260516-canvas-1";
+const assetVersion = "20260518-react-2";
 const meltFrameCount = 256;
 const meltFrameDigits = 3;
 const meltFrameExtension = "webp";
 const frameCanvasSize = 720;
-const backgroundPreloadConcurrency = 6;
 const heaterSpeed = 1.3;
 const refreezeSpeed = 1.15;
 const freezerHoldMs = 10 * 60 * 1000;
@@ -36,8 +35,6 @@ const meltFrames = Array.from(
   (_, index) =>
     `/assets/frames/ice-${String(index).padStart(meltFrameDigits, "0")}.${meltFrameExtension}?v=${assetVersion}`,
 );
-const baseIceFrame = meltFrames[0];
-
 const meltFrameImages: Array<HTMLImageElement | undefined> =
   Array(meltFrameCount);
 const meltFramePromises: Array<Promise<HTMLImageElement | null> | undefined> =
@@ -72,6 +69,18 @@ function loadMeltFrame(index: number) {
 
 function loadBaseIceFrame() {
   return loadMeltFrame(0);
+}
+
+function getFrameBlend(melt: number) {
+  const framePosition = clamp(melt, 0, 1) * (meltFrameCount - 1);
+  const currentFrame = Math.floor(framePosition);
+  const nextFrame = Math.min(currentFrame + 1, meltFrameCount - 1);
+
+  return {
+    currentFrame,
+    nextFrame,
+    mix: framePosition - currentFrame,
+  };
 }
 
 function nearestLoadedFrame(index: number) {
@@ -109,7 +118,7 @@ export default function App() {
   const modeStartedAtRef = useRef(0);
   const modeRef = useRef<TimerMode>(modes.normal);
   const isRunningRef = useRef(false);
-  const lastDynamicMeltRef = useRef(-1);
+  const latestMeltRef = useRef(0);
 
   const [durationMinutes, setDurationMinutes] = useState(defaultMinutes);
   const [remainingMs, setRemainingMs] = useState(remainingMsRef.current);
@@ -132,77 +141,31 @@ export default function App() {
     return remainingMs === totalMs ? "시작" : "계속";
   }, [isDone, isRunning, remainingMs, totalMs]);
 
-  const drawDynamicMelt = useCallback((melt: number) => {
-    const image = meltFrameImages[0];
+  const drawMeltFrame = useCallback((melt: number) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (!image || !context) return;
+    if (!context) return;
 
     const nextMelt = clamp(melt, 0, 1);
-    if (Math.abs(nextMelt - lastDynamicMeltRef.current) < 0.001) return;
+    const { currentFrame, nextFrame, mix } = getFrameBlend(nextMelt);
+    const currentImage = meltFrameImages[currentFrame];
+    const nextImage = meltFrameImages[nextFrame];
+    const fallbackFrame = currentImage
+      ? currentFrame
+      : nearestLoadedFrame(currentFrame);
+    const fallbackImage = meltFrameImages[fallbackFrame];
+    if (!fallbackImage) return;
 
     const size = frameCanvasSize;
-    const waterOpacity = 0.08 + nextMelt * 0.62;
-    const puddleWidth = size * (0.24 + nextMelt * 0.56);
-    const puddleHeight = size * (0.045 + nextMelt * 0.105);
-    const bottom = size * (0.985 - nextMelt * 0.62);
-    const topInset = size * nextMelt * 0.035;
-    const sideInset = size * nextMelt * 0.11;
-    const wave = size * (0.006 + nextMelt * 0.032);
-
     context.clearRect(0, 0, size, size);
+    context.drawImage(fallbackImage, 0, 0, size, size);
 
-    context.save();
-    context.globalAlpha = waterOpacity;
-    context.fillStyle = "#8DCFF4";
-    context.beginPath();
-    context.ellipse(
-      size / 2,
-      size * 0.78,
-      puddleWidth / 2,
-      puddleHeight / 2,
-      0,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
-    context.restore();
-
-    context.save();
-    context.beginPath();
-    context.moveTo(sideInset, topInset);
-    context.lineTo(size - sideInset, topInset);
-    context.lineTo(size - sideInset * 0.82, bottom - wave * 0.35);
-
-    const segments = 8;
-    for (let index = segments; index >= 0; index -= 1) {
-      const x = sideInset + ((size - sideInset * 2) * index) / segments;
-      const y = bottom + Math.sin(index * 1.35 + nextMelt * 7.2) * wave;
-      context.lineTo(x, y);
-    }
-
-    context.closePath();
-    context.clip();
-    context.globalAlpha = 1 - nextMelt * 0.08;
-    context.drawImage(image, 0, 0, size, size);
-    context.restore();
-
-    if (nextMelt > 0.12) {
+    if (currentImage && nextImage && nextFrame !== currentFrame && mix > 0) {
       context.save();
-      context.globalAlpha = nextMelt * 0.34;
-      context.fillStyle = "#B9E1F9";
-      for (let index = 0; index < 5; index += 1) {
-        const x = size * (0.33 + index * 0.085);
-        const y = bottom + size * (0.025 + (index % 2) * 0.025);
-        const radius = size * (0.008 + nextMelt * 0.014);
-        context.beginPath();
-        context.ellipse(x, y, radius * 0.8, radius * 1.4, 0, 0, Math.PI * 2);
-        context.fill();
-      }
+      context.globalAlpha = mix;
+      context.drawImage(nextImage, 0, 0, size, size);
       context.restore();
     }
-
-    lastDynamicMeltRef.current = nextMelt;
   }, []);
 
   const requestMeltFrameWindow = useCallback((index: number) => {
@@ -221,14 +184,27 @@ export default function App() {
 
   const updateMeltFrame = useCallback(
     (melt: number) => {
-      if (meltFrameImages[0]) {
-        drawDynamicMelt(melt);
+      const nextMelt = clamp(melt, 0, 1);
+      const { currentFrame, nextFrame } = getFrameBlend(nextMelt);
+      latestMeltRef.current = nextMelt;
+      requestMeltFrameWindow(currentFrame);
+
+      if (meltFrameImages[currentFrame] && meltFrameImages[nextFrame]) {
+        drawMeltFrame(nextMelt);
         return;
       }
 
-      void loadBaseIceFrame().then(() => drawDynamicMelt(melt));
+      drawMeltFrame(nextMelt);
+      void Promise.all([
+        loadMeltFrame(currentFrame),
+        loadMeltFrame(nextFrame),
+      ]).then(() => {
+        if (Math.abs(latestMeltRef.current - nextMelt) < 0.0005) {
+          drawMeltFrame(nextMelt);
+        }
+      });
     },
-    [drawDynamicMelt],
+    [drawMeltFrame, requestMeltFrameWindow],
   );
 
   const syncView = useCallback(() => {
@@ -365,8 +341,8 @@ export default function App() {
   }, [isDone]);
 
   useEffect(() => {
-    void loadBaseIceFrame().then(() => drawDynamicMelt(0));
-  }, [drawDynamicMelt]);
+    void loadBaseIceFrame().then(() => drawMeltFrame(0));
+  }, [drawMeltFrame]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -434,6 +410,22 @@ export default function App() {
       <section className="timer-shell" aria-label="얼음 공부 타이머">
         <div className="mode-controls" aria-label="온도 조절">
           <div className="mode-buttons">
+            <button
+              className="mode-action mode-action-control"
+              type="button"
+              aria-label="멈춤"
+              onClick={pause}
+            >
+              <PauseIcon />
+            </button>
+            <button
+              className="mode-action mode-action-control"
+              type="button"
+              aria-label="다시 시작"
+              onClick={reset}
+            >
+              <ResetIcon />
+            </button>
             <button
               className={`mode-action mode-action-heater${activeMode === modes.heater ? " active" : ""}`}
               type="button"
@@ -536,8 +528,7 @@ export default function App() {
             onClick={reset}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M3 12a9 9 0 1 0 3-6.7" />
-              <path d="M3 4v5h5" />
+              <ResetIconPaths />
             </svg>
           </button>
         </div>
@@ -551,5 +542,31 @@ export default function App() {
         </p>
       </section>
     </main>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M8 5v14" />
+      <path d="M16 5v14" />
+    </svg>
+  );
+}
+
+function ResetIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <ResetIconPaths />
+    </svg>
+  );
+}
+
+function ResetIconPaths() {
+  return (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+    </>
   );
 }
