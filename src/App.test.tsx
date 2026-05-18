@@ -59,6 +59,20 @@ describe("App", () => {
     expect(canvas).not.toBeInTheDocument();
   });
 
+  it("allows focus sessions longer than 180 minutes", () => {
+    render(<App />);
+    const durationInput = screen.getByRole("spinbutton", {
+      name: "공부 시간(분)",
+    });
+
+    fireEvent.change(durationInput, {
+      target: { value: "240" },
+    });
+
+    expect(durationInput).toHaveValue(240);
+    expect(durationInput).toHaveAttribute("max", "1440");
+  });
+
   it("syncs the melt video position to timer progress", async () => {
     const user = userEvent.setup();
     render(<App />);

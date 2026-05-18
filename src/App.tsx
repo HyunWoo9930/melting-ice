@@ -15,6 +15,7 @@ const refreezeSpeed = 1.15;
 const freezerHoldMs = 10 * 60 * 1000;
 const freezerWarningMs = 5 * 1000;
 const defaultMinutes = 25;
+const maxDurationMinutes = 24 * 60;
 const defaultTitle = "이 얼음이 녹기 전에";
 const doneTitle = `수고했어요 · ${defaultTitle}`;
 
@@ -218,7 +219,11 @@ export default function App() {
 
   const setDuration = useCallback(
     (minutes: number) => {
-      const safeMinutes = clamp(Number(minutes) || defaultMinutes, 1, 180);
+      const safeMinutes = clamp(
+        Number(minutes) || defaultMinutes,
+        1,
+        maxDurationMinutes,
+      );
       durationSecondsRef.current = safeMinutes * 60;
       setDurationMinutes(safeMinutes);
       reset();
@@ -407,7 +412,7 @@ export default function App() {
               type="number"
               inputMode="numeric"
               min={1}
-              max={180}
+              max={maxDurationMinutes}
               value={durationMinutes}
               aria-label="공부 시간(분)"
               onChange={(event) =>
