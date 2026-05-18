@@ -38,6 +38,12 @@ button {
   cursor: pointer;
 }
 
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(1, 69, 242, 0.38);
+  outline-offset: 4px;
+}
+
 .app {
   position: relative;
   min-height: 100svh;
@@ -289,7 +295,6 @@ button {
   font-size: 18px;
   font-weight: 900;
   text-align: right;
-  outline: none;
 }
 
 .actions {

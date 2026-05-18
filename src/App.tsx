@@ -1,7 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -27,10 +27,43 @@ const modes = {
 
 type TimerMode = (typeof modes)[keyof typeof modes];
 type FreezerPhase = "off" | "holding" | "warning" | "refreezing";
-type TimerState = "idle" | "running" | "done";
+type TimerStatus = "idle" | "running" | "done";
+
+type TimerModel = {
+  activeMode: TimerMode;
+  durationInput: string;
+  durationSeconds: number;
+  isRunning: boolean;
+  modeStartedAt: number;
+  remainingMs: number;
+};
+
+type TimerAction =
+  | { type: "replace"; state: TimerModel }
+  | { type: "setDurationInput"; value: string }
+  | { type: "commitDurationInput" }
+  | { type: "start" }
+  | { type: "pause"; now: number; previousTickTime: number }
+  | { type: "reset" }
+  | {
+      type: "toggleMode";
+      mode: TimerMode;
+      now: number;
+      previousTickTime: number;
+    }
+  | { type: "tick"; now: number; previousTickTime: number };
 
 const meltVideoSource = `/assets/ice-melt.webm?v=${assetVersion}`;
 const meltPosterSource = `/assets/frames/ice-000.webp?v=${assetVersion}`;
+
+const initialTimer: TimerModel = {
+  activeMode: modes.normal,
+  durationInput: String(defaultMinutes),
+  durationSeconds: defaultMinutes * 60,
+  isRunning: false,
+  modeStartedAt: 0,
+  remainingMs: defaultMinutes * 60 * 1000,
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -38,6 +71,46 @@ function clamp(value: number, min: number, max: number) {
 
 function visualProgress(melt: number) {
   return melt * melt * (3 - 2 * melt);
+}
+
+function timerTotalMs(timer: TimerModel) {
+  return timer.durationSeconds * 1000;
+}
+
+function timerProgress(timer: TimerModel) {
+  const totalMs = timerTotalMs(timer);
+  return totalMs <= 0 ? 0 : clamp(1 - timer.remainingMs / totalMs, 0, 1);
+}
+
+function timerVisualMelt(timer: TimerModel) {
+  return visualProgress(timerProgress(timer));
+}
+
+function timerStatus(timer: TimerModel): TimerStatus {
+  if (timer.remainingMs === 0) return "done";
+  return timer.isRunning ? "running" : "idle";
+}
+
+function parseDurationMinutes(value: string) {
+  if (value.trim() === "") return null;
+  const nextValue = Number(value);
+  if (!Number.isFinite(nextValue)) return null;
+  return nextValue;
+}
+
+function commitDuration(timer: TimerModel, minutes: number) {
+  const safeMinutes = clamp(Math.round(minutes), 1, maxDurationMinutes);
+  const durationSeconds = safeMinutes * 60;
+
+  return {
+    ...timer,
+    activeMode: modes.normal,
+    durationInput: String(safeMinutes),
+    durationSeconds,
+    isRunning: false,
+    modeStartedAt: 0,
+    remainingMs: durationSeconds * 1000,
+  };
 }
 
 function freezerPhase(
@@ -52,38 +125,202 @@ function freezerPhase(
   return "holding";
 }
 
+function applyElapsed(
+  timer: TimerModel,
+  previousTickTime: number,
+  now: number,
+) {
+  if (!timer.isRunning || !previousTickTime) return timer;
+
+  const elapsedMs = Math.max(0, now - previousTickTime);
+  if (elapsedMs === 0) return { ...timer };
+
+  const totalMs = timerTotalMs(timer);
+  let remainingMs = timer.remainingMs;
+  let activeMode: TimerMode = timer.activeMode;
+  let modeStartedAt = timer.modeStartedAt;
+  let isRunning: boolean = timer.isRunning;
+
+  if (timer.activeMode === modes.heater) {
+    remainingMs -= elapsedMs * heaterSpeed;
+  } else if (timer.activeMode === modes.freezer) {
+    const previousRefreezeMs = Math.max(
+      0,
+      previousTickTime - timer.modeStartedAt - freezerHoldMs,
+    );
+    const currentRefreezeMs = Math.max(
+      0,
+      now - timer.modeStartedAt - freezerHoldMs,
+    );
+    const refreezeMs = currentRefreezeMs - previousRefreezeMs;
+
+    remainingMs += refreezeMs * refreezeSpeed;
+    if (remainingMs >= totalMs && currentRefreezeMs > 0) {
+      remainingMs = totalMs;
+      activeMode = modes.normal;
+      modeStartedAt = 0;
+      isRunning = false;
+    }
+  } else {
+    remainingMs -= elapsedMs;
+  }
+
+  if (remainingMs <= 0) {
+    return {
+      ...timer,
+      activeMode: modes.normal,
+      isRunning: false,
+      modeStartedAt: 0,
+      remainingMs: 0,
+    };
+  }
+
+  return {
+    ...timer,
+    activeMode,
+    isRunning,
+    modeStartedAt,
+    remainingMs: clamp(remainingMs, 0, totalMs),
+  };
+}
+
+function timerReducer(timer: TimerModel, action: TimerAction): TimerModel {
+  switch (action.type) {
+    case "replace":
+      return action.state;
+    case "setDurationInput": {
+      const minutes = parseDurationMinutes(action.value);
+      if (
+        minutes === null ||
+        minutes < 1 ||
+        minutes > maxDurationMinutes
+      ) {
+        return {
+          ...timer,
+          durationInput: action.value,
+        };
+      }
+
+      return commitDuration(
+        {
+          ...timer,
+          durationInput: action.value,
+        },
+        minutes,
+      );
+    }
+    case "commitDurationInput": {
+      const minutes =
+        parseDurationMinutes(timer.durationInput) ?? timer.durationSeconds / 60;
+      return commitDuration(timer, minutes);
+    }
+    case "start":
+      if (timer.remainingMs <= 0) return timer;
+      return {
+        ...timer,
+        isRunning: true,
+      };
+    case "pause": {
+      const nextTimer = applyElapsed(
+        timer,
+        action.previousTickTime,
+        action.now,
+      );
+      return {
+        ...nextTimer,
+        isRunning: false,
+      };
+    }
+    case "reset":
+      return {
+        ...timer,
+        activeMode: modes.normal,
+        isRunning: false,
+        modeStartedAt: 0,
+        remainingMs: timerTotalMs(timer),
+      };
+    case "toggleMode": {
+      const elapsedTimer = applyElapsed(
+        timer,
+        action.previousTickTime,
+        action.now,
+      );
+      if (!elapsedTimer.isRunning || elapsedTimer.remainingMs <= 0) {
+        return elapsedTimer;
+      }
+
+      const nextMode =
+        elapsedTimer.activeMode === action.mode ? modes.normal : action.mode;
+
+      return {
+        ...elapsedTimer,
+        activeMode: nextMode,
+        modeStartedAt: nextMode === modes.normal ? 0 : action.now,
+      };
+    }
+    case "tick":
+      return applyElapsed(timer, action.previousTickTime, action.now);
+    default:
+      return timer;
+  }
+}
+
+type FullscreenDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+};
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+async function toggleFullscreen() {
+  const fullscreenDocument = document as FullscreenDocument;
+  const root = document.documentElement as FullscreenElement;
+  const isFullscreen =
+    Boolean(document.fullscreenElement) ||
+    Boolean(fullscreenDocument.webkitFullscreenElement);
+
+  if (!isFullscreen) {
+    await (root.requestFullscreen?.() ?? root.webkitRequestFullscreen?.());
+    return;
+  }
+
+  await (document.exitFullscreen?.() ??
+    fullscreenDocument.webkitExitFullscreen?.());
+}
+
 export default function App() {
   const meltVideoRef = useRef<HTMLVideoElement | null>(null);
   const frameIdRef = useRef(0);
   const lastTickTimeRef = useRef(0);
-  const durationSecondsRef = useRef(defaultMinutes * 60);
-  const remainingMsRef = useRef(defaultMinutes * 60 * 1000);
-  const modeStartedAtRef = useRef(0);
-  const modeRef = useRef<TimerMode>(modes.normal);
-  const isRunningRef = useRef(false);
   const pendingVideoMeltRef = useRef(0);
   const lastSyncedVideoFrameRef = useRef(-1);
+  const timerRef = useRef(initialTimer);
 
-  const [durationMinutes, setDurationMinutes] = useState(defaultMinutes);
-  const [remainingMs, setRemainingMs] = useState(remainingMsRef.current);
-  const [isRunning, setIsRunning] = useState(false);
-  const [activeMode, setActiveMode] = useState<TimerMode>(modes.normal);
-  const [modeStartedAt, setModeStartedAt] = useState(0);
+  const [timer, dispatchBase] = useReducer(timerReducer, initialTimer);
   const [isRippling, setIsRippling] = useState(false);
 
-  const totalMs = durationSecondsRef.current * 1000;
-  const progress = totalMs <= 0 ? 0 : clamp(1 - remainingMs / totalMs, 0, 1);
-  const visualMelt = visualProgress(progress);
-  const currentFreezerPhase = freezerPhase(activeMode, modeStartedAt);
-  const timerState: TimerState =
-    remainingMs === 0 ? "done" : isRunning ? "running" : "idle";
-  const isDone = timerState === "done";
+  const status = timerStatus(timer);
+  const isDone = status === "done";
+  const totalMs = timerTotalMs(timer);
+  const visualMelt = timerVisualMelt(timer);
+  const currentFreezerPhase = freezerPhase(
+    timer.activeMode,
+    timer.modeStartedAt,
+  );
 
-  const startPauseText = useMemo(() => {
-    if (isDone) return "완료";
-    if (isRunning) return "멈춤";
-    return remainingMs === totalMs ? "시작" : "계속";
-  }, [isDone, isRunning, remainingMs, totalMs]);
+  const dispatchTimer = useCallback((action: TimerAction) => {
+    const nextTimer = timerReducer(timerRef.current, action);
+    timerRef.current = nextTimer;
+    dispatchBase({ type: "replace", state: nextTimer });
+    return nextTimer;
+  }, []);
+
+  const stopLoop = useCallback(() => {
+    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+    frameIdRef.current = 0;
+  }, []);
 
   const syncMeltVideo = useCallback((melt: number, force = false) => {
     const video = meltVideoRef.current;
@@ -110,150 +347,95 @@ export default function App() {
     lastSyncedVideoFrameRef.current = targetFrame;
   }, []);
 
-  const syncView = useCallback(() => {
-    const nextRemainingMs = clamp(
-      remainingMsRef.current,
-      0,
-      durationSecondsRef.current * 1000,
-    );
-    remainingMsRef.current = nextRemainingMs;
-    setRemainingMs(nextRemainingMs);
-    setIsRunning(isRunningRef.current);
-    setActiveMode(modeRef.current);
-    setModeStartedAt(modeStartedAtRef.current);
-    syncMeltVideo(
-      visualProgress(
-        durationSecondsRef.current <= 0
-          ? 0
-          : 1 - nextRemainingMs / (durationSecondsRef.current * 1000),
-      ),
-    );
-  }, [syncMeltVideo]);
-
-  const stopLoop = useCallback(() => {
-    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
-    frameIdRef.current = 0;
-  }, []);
-
-  const applyElapsed = useCallback((now: number) => {
-    if (!lastTickTimeRef.current) {
-      lastTickTimeRef.current = now;
-      return;
-    }
-
+  const tick = useCallback(() => {
+    const now = Date.now();
     const previousTickTime = lastTickTimeRef.current;
-    const elapsedMs = Math.max(0, now - previousTickTime);
     lastTickTimeRef.current = now;
 
-    if (modeRef.current === modes.heater) {
-      remainingMsRef.current -= elapsedMs * heaterSpeed;
-      return;
-    }
+    const nextTimer = dispatchTimer({
+      type: "tick",
+      now,
+      previousTickTime,
+    });
 
-    if (modeRef.current === modes.freezer) {
-      const previousRefreezeMs = Math.max(
-        0,
-        previousTickTime - modeStartedAtRef.current - freezerHoldMs,
-      );
-      const currentRefreezeMs = Math.max(
-        0,
-        now - modeStartedAtRef.current - freezerHoldMs,
-      );
-      const refreezeMs = currentRefreezeMs - previousRefreezeMs;
-      remainingMsRef.current += refreezeMs * refreezeSpeed;
-      remainingMsRef.current = Math.min(
-        remainingMsRef.current,
-        durationSecondsRef.current * 1000,
-      );
-      return;
-    }
-
-    remainingMsRef.current -= elapsedMs;
-  }, []);
-
-  const tick = useCallback(() => {
-    applyElapsed(Date.now());
-    remainingMsRef.current = clamp(
-      remainingMsRef.current,
-      0,
-      durationSecondsRef.current * 1000,
-    );
-    syncView();
-
-    if (remainingMsRef.current <= 0) {
-      isRunningRef.current = false;
-      modeRef.current = modes.normal;
-      modeStartedAtRef.current = 0;
+    if (!nextTimer.isRunning) {
+      lastTickTimeRef.current = 0;
       stopLoop();
-      syncView();
       return;
     }
 
     frameIdRef.current = requestAnimationFrame(tick);
-  }, [applyElapsed, stopLoop, syncView]);
+  }, [dispatchTimer, stopLoop]);
 
   const start = useCallback(() => {
-    if (remainingMsRef.current <= 0) return;
-    isRunningRef.current = true;
+    const nextTimer = dispatchTimer({ type: "start" });
+    if (!nextTimer.isRunning) return;
+
     lastTickTimeRef.current = Date.now();
     stopLoop();
-    tick();
-  }, [stopLoop, tick]);
+    frameIdRef.current = requestAnimationFrame(tick);
+  }, [dispatchTimer, stopLoop, tick]);
 
   const pause = useCallback(() => {
-    isRunningRef.current = false;
+    const now = Date.now();
+    dispatchTimer({
+      type: "pause",
+      now,
+      previousTickTime: lastTickTimeRef.current,
+    });
     lastTickTimeRef.current = 0;
     stopLoop();
-    syncView();
-  }, [stopLoop, syncView]);
+  }, [dispatchTimer, stopLoop]);
 
   const reset = useCallback(() => {
-    isRunningRef.current = false;
-    modeRef.current = modes.normal;
-    modeStartedAtRef.current = 0;
+    dispatchTimer({ type: "reset" });
     lastTickTimeRef.current = 0;
-    remainingMsRef.current = durationSecondsRef.current * 1000;
     stopLoop();
-    syncView();
-  }, [stopLoop, syncView]);
-
-  const setDuration = useCallback(
-    (minutes: number) => {
-      const safeMinutes = clamp(
-        Number(minutes) || defaultMinutes,
-        1,
-        maxDurationMinutes,
-      );
-      durationSecondsRef.current = safeMinutes * 60;
-      setDurationMinutes(safeMinutes);
-      reset();
-    },
-    [reset],
-  );
+  }, [dispatchTimer, stopLoop]);
 
   const toggleMode = useCallback(
     (mode: TimerMode) => {
-      if (!isRunningRef.current || remainingMsRef.current <= 0) return;
+      const now = Date.now();
+      const nextTimer = dispatchTimer({
+        type: "toggleMode",
+        mode,
+        now,
+        previousTickTime: lastTickTimeRef.current,
+      });
 
-      applyElapsed(Date.now());
-      modeRef.current = modeRef.current === mode ? modes.normal : mode;
-      modeStartedAtRef.current = Date.now();
-      syncView();
+      if (nextTimer.isRunning) {
+        lastTickTimeRef.current = now;
+      }
     },
-    [applyElapsed, syncView],
+    [dispatchTimer],
   );
+
+  const startPauseText = isDone
+    ? "완료"
+    : timer.isRunning
+      ? "멈춤"
+      : timer.remainingMs === totalMs
+        ? "시작"
+        : "계속";
+
+  useEffect(() => {
+    timerRef.current = timer;
+  }, [timer]);
+
+  useEffect(() => {
+    syncMeltVideo(visualMelt);
+  }, [syncMeltVideo, visualMelt]);
 
   useEffect(() => {
     document.title = isDone ? doneTitle : defaultTitle;
+    return () => {
+      document.title = defaultTitle;
+    };
   }, [isDone]);
 
   useEffect(() => {
-    syncMeltVideo(0, true);
-  }, [syncMeltVideo]);
-
-  useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!isRunningRef.current || document.visibilityState !== "visible")
+      if (!timerRef.current.isRunning || document.visibilityState !== "visible")
         return;
       stopLoop();
       tick();
@@ -286,8 +468,8 @@ export default function App() {
   return (
     <main
       className="app"
-      data-state={timerState}
-      data-mode={activeMode}
+      data-state={status}
+      data-mode={timer.activeMode}
       data-freezer-phase={currentFreezerPhase}
       style={
         { "--melt": visualMelt.toFixed(4) } as CSSProperties &
@@ -302,12 +484,8 @@ export default function App() {
           className="icon-button"
           type="button"
           aria-label="전체 화면"
-          onClick={async () => {
-            if (!document.fullscreenElement) {
-              await document.documentElement.requestFullscreen?.();
-              return;
-            }
-            await document.exitFullscreen?.();
+          onClick={() => {
+            void toggleFullscreen();
           }}
         >
           <span aria-hidden="true">⛶</span>
@@ -328,18 +506,18 @@ export default function App() {
             <button
               className="mode-action mode-action-control"
               type="button"
-              aria-label="다시 시작"
+              aria-label="처음으로"
               onClick={reset}
             >
               <ResetIcon />
             </button>
             <button
-              className={`mode-action mode-action-heater${activeMode === modes.heater ? " active" : ""}`}
+              className={`mode-action mode-action-heater${timer.activeMode === modes.heater ? " active" : ""}`}
               type="button"
               aria-label={
-                activeMode === modes.heater ? "히터 끄기" : "히터 켜기"
+                timer.activeMode === modes.heater ? "히터 끄기" : "히터 켜기"
               }
-              aria-pressed={activeMode === modes.heater}
+              aria-pressed={timer.activeMode === modes.heater}
               onClick={() => toggleMode(modes.heater)}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -347,12 +525,14 @@ export default function App() {
               </svg>
             </button>
             <button
-              className={`mode-action mode-action-freezer${activeMode === modes.freezer ? " active" : ""}`}
+              className={`mode-action mode-action-freezer${timer.activeMode === modes.freezer ? " active" : ""}`}
               type="button"
               aria-label={
-                activeMode === modes.freezer ? "냉장고 끄기" : "냉장고 켜기"
+                timer.activeMode === modes.freezer
+                  ? "냉장고 끄기"
+                  : "냉장고 켜기"
               }
-              aria-pressed={activeMode === modes.freezer}
+              aria-pressed={timer.activeMode === modes.freezer}
               onClick={() => toggleMode(modes.freezer)}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -413,10 +593,14 @@ export default function App() {
               inputMode="numeric"
               min={1}
               max={maxDurationMinutes}
-              value={durationMinutes}
+              value={timer.durationInput}
               aria-label="공부 시간(분)"
+              onBlur={() => dispatchTimer({ type: "commitDurationInput" })}
               onChange={(event) =>
-                setDuration(event.currentTarget.valueAsNumber)
+                dispatchTimer({
+                  type: "setDurationInput",
+                  value: event.currentTarget.value,
+                })
               }
             />
             <span>분</span>
@@ -429,7 +613,7 @@ export default function App() {
             type="button"
             disabled={isDone}
             onClick={() => {
-              if (isRunningRef.current) {
+              if (timerRef.current.isRunning) {
                 pause();
                 return;
               }

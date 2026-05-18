@@ -26,6 +26,7 @@ WEBP_QUALITY = 90
 WEBP_METHOD = 4
 
 TARGET_BBOXES = [
+    # 720x720 output-space ice bounding boxes for each photographic keyframe.
     (121.0, 161.0, 607.0, 660.0),
     (110.0, 194.0, 621.0, 668.0),
     (65.0, 314.0, 684.0, 663.0),

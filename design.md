@@ -132,13 +132,8 @@ Calm, cold, slightly dreamy, and study-reels adjacent. Avoid loud gradients, ove
 
 ### State
 
-- `durationSeconds`
-- `remainingMs`
-- `isRunning`
-- `frameId`
-- `lastTickTime`
-- `activeMode`
-- `modeStartedAt`
+- `TimerModel`: `durationSeconds`, `durationInput`, `remainingMs`, `isRunning`, `activeMode`, `modeStartedAt`.
+- `frameIdRef` and `lastTickTimeRef`: requestAnimationFrame loop bookkeeping.
 - `pendingVideoMelt`
 - `lastSyncedVideoFrame`
 
