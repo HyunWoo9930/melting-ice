@@ -13,6 +13,8 @@ import App from "./App";
 
 let drawImageSources: string[] = [];
 let animationFrameCallbacks: FrameRequestCallback[] = [];
+let delayedFrameLoads: Array<() => void> = [];
+let delayProgressedFrameLoads = false;
 let now = 1_000;
 
 class TestImage {
@@ -27,6 +29,16 @@ class TestImage {
 
   set src(value: string) {
     this.imageSrc = value;
+    const frameMatch = /ice-(\d{3})\.webp/.exec(value);
+    if (
+      delayProgressedFrameLoads &&
+      frameMatch &&
+      frameMatch[1] !== "000"
+    ) {
+      delayedFrameLoads.push(() => this.onload?.(new Event("load")));
+      return;
+    }
+
     queueMicrotask(() => this.onload?.(new Event("load")));
   }
 }
@@ -54,6 +66,8 @@ function createCanvasContext() {
 beforeEach(() => {
   drawImageSources = [];
   animationFrameCallbacks = [];
+  delayedFrameLoads = [];
+  delayProgressedFrameLoads = false;
   now = 1_000;
 
   vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -88,6 +102,45 @@ describe("App", () => {
     expect(
       within(runningControls).getByRole("button", { name: "다시 시작" }),
     ).toBeVisible();
+  });
+
+  it("does not flash back to stale frames while the target melt frame is still loading", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "시작" }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    delayProgressedFrameLoads = true;
+    drawImageSources = [];
+
+    await act(async () => {
+      now += 13 * 60 * 1000;
+      animationFrameCallbacks.shift()?.(now);
+      await Promise.resolve();
+    });
+
+    const drawnFrameIndexes = drawImageSources
+      .map((source) => /ice-(\d{3})\.webp/.exec(source)?.[1])
+      .filter((frame): frame is string => Boolean(frame))
+      .map(Number);
+
+    expect(drawnFrameIndexes.every((frame) => frame >= 130)).toBe(true);
+
+    await act(async () => {
+      delayedFrameLoads.splice(0).forEach((resolveLoad) => resolveLoad());
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(
+        drawImageSources.some((source) => /ice-13\d\.webp/.test(source)),
+      ).toBe(true);
+    });
   });
 
   it("draws progressed melt frames instead of only redrawing the base frame", async () => {

@@ -12,6 +12,8 @@ const meltFrameCount = 256;
 const meltFrameDigits = 3;
 const meltFrameExtension = "webp";
 const frameCanvasSize = 720;
+const forwardPreloadCount = 18;
+const backwardPreloadCount = 4;
 const heaterSpeed = 1.3;
 const refreezeSpeed = 1.15;
 const freezerHoldMs = 10 * 60 * 1000;
@@ -83,20 +85,6 @@ function getFrameBlend(melt: number) {
   };
 }
 
-function nearestLoadedFrame(index: number) {
-  if (meltFrameImages[index]) return index;
-
-  for (let distance = 1; distance < meltFrames.length; distance += 1) {
-    const previous = index - distance;
-    const next = index + distance;
-
-    if (previous >= 0 && meltFrameImages[previous]) return previous;
-    if (next < meltFrames.length && meltFrameImages[next]) return next;
-  }
-
-  return -1;
-}
-
 function freezerPhase(
   mode: TimerMode,
   modeStartedAt: number,
@@ -119,6 +107,7 @@ export default function App() {
   const modeRef = useRef<TimerMode>(modes.normal);
   const isRunningRef = useRef(false);
   const latestMeltRef = useRef(0);
+  const lastDrawnFrameRef = useRef(0);
 
   const [durationMinutes, setDurationMinutes] = useState(defaultMinutes);
   const [remainingMs, setRemainingMs] = useState(remainingMsRef.current);
@@ -144,21 +133,17 @@ export default function App() {
   const drawMeltFrame = useCallback((melt: number) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (!context) return;
+    if (!context) return false;
 
     const nextMelt = clamp(melt, 0, 1);
     const { currentFrame, nextFrame, mix } = getFrameBlend(nextMelt);
     const currentImage = meltFrameImages[currentFrame];
     const nextImage = meltFrameImages[nextFrame];
-    const fallbackFrame = currentImage
-      ? currentFrame
-      : nearestLoadedFrame(currentFrame);
-    const fallbackImage = meltFrameImages[fallbackFrame];
-    if (!fallbackImage) return;
+    if (!currentImage) return false;
 
     const size = frameCanvasSize;
     context.clearRect(0, 0, size, size);
-    context.drawImage(fallbackImage, 0, 0, size, size);
+    context.drawImage(currentImage, 0, 0, size, size);
 
     if (currentImage && nextImage && nextFrame !== currentFrame && mix > 0) {
       context.save();
@@ -166,20 +151,24 @@ export default function App() {
       context.drawImage(nextImage, 0, 0, size, size);
       context.restore();
     }
+
+    lastDrawnFrameRef.current = currentFrame;
+    return true;
   }, []);
 
   const requestMeltFrameWindow = useCallback((index: number) => {
-    [
-      index,
-      index + 1,
-      index + 2,
-      index + 3,
-      index + 6,
-      index - 1,
-      index - 2,
-    ].forEach((nearbyIndex) => {
-      void loadMeltFrame(nearbyIndex);
-    });
+    const direction = index >= lastDrawnFrameRef.current ? 1 : -1;
+    const nearbyIndexes = new Set([index, index + 1, index - 1]);
+
+    for (let offset = 1; offset <= forwardPreloadCount; offset += 1) {
+      nearbyIndexes.add(index + offset * direction);
+    }
+
+    for (let offset = 1; offset <= backwardPreloadCount; offset += 1) {
+      nearbyIndexes.add(index - offset * direction);
+    }
+
+    nearbyIndexes.forEach((nearbyIndex) => void loadMeltFrame(nearbyIndex));
   }, []);
 
   const updateMeltFrame = useCallback(
@@ -194,7 +183,7 @@ export default function App() {
         return;
       }
 
-      drawMeltFrame(nextMelt);
+      if (drawMeltFrame(nextMelt)) return;
       void Promise.all([
         loadMeltFrame(currentFrame),
         loadMeltFrame(nextFrame),
